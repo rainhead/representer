@@ -6,13 +6,36 @@ module Presenters
   #
   class Base
     attr_reader :model, :controller
-
-    # A module that will collect all helpers that need to be made available to the view. 
     class_inheritable_accessor :master_helper_module
-    self.master_helper_module = Module.new
-  
+    
+    # Include some useful modules.
+    #     What exactly should be included here? We get along with the modules for request
+    #     forgery protection and record identifier a.t.m..
+    #     Anything else needed?                                               -nd 20080701-
+    # 
+    # ActionController::Helpers is needed by ActionController::RequestForgeryProtection
+    # and its .helper gets overwritten later by the .helper here. Therefor it has to be
+    # included before the definition of .helper.
+    # 
+    include ActionController::Helpers
+    include ActionController::RequestForgeryProtection    # for forms
+    include ActionController::RecordIdentifier            # dom_id & co.
+    delegate :allow_forgery_protection, :to => :controller
+    
     class << self
-
+      
+      # A module that will collect all helpers that need to be made available to the view.
+      #
+      master_helper_module = Module.new
+      
+      # Make a helper available to the current presenter, its subclasses and the presenter's views.
+      # Same as in Controller::Base.
+      #
+      def helper(helper)
+        include helper
+        master_helper_module.send(:include, helper)
+      end
+      
       # Define a reader for a model attribute. Acts as a filtered delegation to the model. 
       #
       # You may specify a :filter_through option that is either a symbol or an array of symbols. The return value
@@ -38,16 +61,7 @@ module Presenters
           class_eval(reader)
         end
       end
-    
-      # Make a helper available to the current presenter, its subclasses and the presenter's views.
-      #
-      # Same as in Controller::Base.
-      #
-      def helper(helper)
-        include helper
-        master_helper_module.send(:include, helper)
-      end
-    
+      
       # Delegates method calls to the controller.
       #
       # Example: 

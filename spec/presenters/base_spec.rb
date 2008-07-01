@@ -111,6 +111,18 @@ describe Presenters::Base do
     end
   end
   
+  describe "ActionController includes" do
+    it "should include ActionController::Helpers" do
+      Presenters::Base.include?(ActionController::Helpers).should be_true
+    end
+    it "should include ActionController::RequestForgeryProtection" do
+      Presenters::Base.include?(ActionController::RequestForgeryProtection).should be_true
+    end
+    it "should include ActionController::RecordIdentifier" do
+      Presenters::Base.include?(ActionController::RecordIdentifier).should be_true
+    end
+  end
+  
   describe ".presenter_path" do
     it "should call underscore on its name" do
       name_mock = flexmock(:name)

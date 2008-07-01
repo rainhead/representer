@@ -74,10 +74,18 @@ module PresenterHelper
   # * Render a Pagination
   #
   class Collection
+    include Enumerable
+    
+    attr_reader :model_collection
 
-    def initialize(collection, context)
-      @collection, @context = collection, context
+    def initialize(model_collection, context)
+      @model_collection, @context = model_collection, context
     end
+
+    delegate :length, :to =>  :model_collection
+    delegate :size,   :to =>  :model_collection
+    delegate :empty?, :to =>  :model_collection
+    delegate :each,   :to =>  :model_collection
 
     # Renders a list (in the broadest sense of the word).
     #
@@ -94,7 +102,7 @@ module PresenterHelper
     #
     def list(options = {})
       default_options = {
-        :collection => @collection,
+        :collection => @model_collection,
         :context => @context,
         :template_name => :list_item,
         :separator => nil
@@ -121,7 +129,7 @@ module PresenterHelper
     #
     def collection(options = {})
       default_options = {
-        :collection => @collection,
+        :collection => @model_collection,
         :context => @context,
         :template_name => :collection_item,
         :separator => nil
@@ -147,7 +155,7 @@ module PresenterHelper
     #
     def table(options = {})
       options = {
-        :collection => @collection,
+        :collection => @model_collection,
         :context => @context,
         :template_name => :table_row,
         :separator => nil
@@ -169,7 +177,7 @@ module PresenterHelper
     #
     def pagination(options = {})
       options = {
-        :collection => @collection,
+        :collection => @model_collection,
         :context => @context,
         :separator => '|'
       }.merge(options)

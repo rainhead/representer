@@ -96,6 +96,39 @@ describe PresenterHelper do
       @collection_presenter = PresenterHelper::Collection.new(@collection_mock, @context_mock)
     end
 
+    describe "enumerable" do
+      describe "length" do
+        it "should delegate to #length of the collection" do
+          @collection_mock.should_receive(:length).once
+          @collection_presenter.length
+        end
+        it "should return the length of the collection" do
+          @collection_mock.should_receive(:length).and_return(:this_length)
+          @collection_presenter.length.should == :this_length
+        end
+        it "should alias size" do
+          @collection_mock.should_receive(:size).and_return(:this_length)
+          @collection_presenter.size.should == :this_length
+        end
+      end
+      describe "empty?" do
+        it "should delegate to #empty? of the collection" do
+          @collection_mock.should_receive(:empty?).once
+          @collection_presenter.empty?
+        end
+        it "should return whatever #empty? of the collection returns" do
+          @collection_mock.should_receive(:empty?).and_return(:true_or_false)
+          @collection_presenter.empty?.should == :true_or_false
+        end
+      end
+      describe "each" do
+        it "should delegate to #each of the collection" do
+          @collection_mock.should_receive(:each).with(Proc).once
+          @collection_presenter.each { |c| }
+        end
+      end
+    end
+
     describe "list" do
       it "should call render_partial and return the rendered result" do
         flexmock(collection_presenter).should_receive(:render_partial).and_return(:result)

@@ -1,12 +1,16 @@
 # Base Module for Presenters.
 #
+
 module Presenters
-  
   # Base class from which all presenters inherit.
   #
   class Base
-    attr_reader :model, :controller
+    extend ActiveSupport::Memoizable
+    
+    attr_accessor :view_instance, :output_buffer
+    attr_reader :model, :controller, :context
     class_inheritable_accessor :master_helper_module
+    class_inheritable_array :view_paths
     
     # Include some useful modules.
     #     What exactly should be included here? We get along with the modules for request
@@ -20,9 +24,24 @@ module Presenters
     include ActionController::Helpers
     include ActionController::RequestForgeryProtection    # for forms
     include ActionController::RecordIdentifier            # dom_id & co.
-    delegate :allow_forgery_protection, :to => :controller
+    delegate :session, :request,
+             :allow_forgery_protection, :protect_against_forgery?, :request_forgery_protection_token,
+             :to => :controller
+
+    # Default view directory
+    self.view_paths = ['app/views/presenters']
     
     class << self
+      # Sub-classes will have a path derived from their name appended to the view_paths used by ActionView.
+      # E.g.,
+      #   Presenters::B < Presenters::A < Presenters::Base
+      # will have as view_paths:
+      #   ['app/views/presenters', 'app/views/presenters/a', 'app/views/presenters/b']
+      #
+      def inherited(subclass)
+        super
+        subclass.push_presenter_path
+      end
       
       # A module that will collect all helpers that need to be made available to the view.
       #
@@ -56,7 +75,8 @@ module Presenters
       
         fields.each do |field|
           reader = "def #{field}; 
-                    #{filters.join('(').strip}(model.#{field})#{')' * (filters.size - 1) unless filters.empty?}; 
+                    @model_reader_cache ||= {}
+                    @model_reader_cache[:#{field}] ||= #{filters.join('(').strip}(model.#{field})#{')' * (filters.size - 1) unless filters.empty?}; 
                     end"
           class_eval(reader)
         end
@@ -79,82 +99,76 @@ module Presenters
       end
     
       # Returns the path from the presenter_view_paths to the actual templates.
-      # e.g. "presenters/models/book"
+      # e.g. "app/views/presenters/models/book"
       #
       # If the class is named
       #   Presenters::Models::Book
       # this method will yield
-      #   presenters/models/book
+      #   app/views/presenters/models/book
       #
-      def presenter_path
-        name.underscore
+      def push_presenter_path(name=nil)
+        name ||= self.name
+        path = File.join(RAILS_ROOT, 'app', 'views', name.underscore)
+        view_paths.unshift path
+      end
+      
+      def push_module_presenter_path(module_name)
+        class_path = view_paths.pop
+        push_presenter_path "presenters/#{module_name}"
+        view_paths.unshift class_path
       end
     end # class << self
     
     # Create a presenter. To create a presenter, you need to have a model (to present) and a context.
     # The context is usually a view or a controller.
-    # Note: But doesn't need to be one :)
     # 
     def initialize(model, context)
       @model = model
-      @controller = extract_controller_from context
+      @controller = case context
+      when ActionController::Base: context
+      when Presenters::Base:       context.controller
+      else                         raise "Invalid context #{context} for presenter. Must be a controller or a presenter."
+      end
+      debugger if @controller.nil?
+      @context = context
     end
     
-    # Make #logger available in presenters. 
-    #
-    controller_method :logger
+    def method_missing(method_name, *args, &block)
+      case method_name.to_s
+      when /render_(.+)/: render $1
+      when /id_for_(.+)/
+        self.class.send(:define_method, method_name) { generate_html_id $1 }
+        self.class.memoize method_name
+        send method_name
+      else
+        super
+      end
+    end
     
-    # Renders the given view in the presenter's view root in the format given.
+    # Render several views, sequentially:
     #
-    # Example:
-    #   app/views/presenters/this/presenter/template.html.haml
-    #   app/views/presenters/this/presenter/template.text.erb
+    #   multirender :header, :overview, :viewer, :footer
     #
-    # Calling presenter.render_as('template', :html) will render the haml
-    # template, calling presenter.render_as('template', :text) will render
-    # the erb.
-    #
-    def render_as(view_name, format = nil)
-      # Get a view instance from the view class.
-      view = view_instance
-    
-      # Set the format to render in, e.g. :text, :html
-      view.template_format = format if format
-    
-      # Finally, render and pass the presenter as a local variable.
-      view.render :partial => template_path(view_name), :locals => { :presenter => self }
+    def multirender(views)
+      views.collect { |view| send "render_#{view}" }.join("\n")
     end
     
     private
-      
-      # Creates a view instance from the given view class.
-      #
-      def view_instance
-        view = ActionView::Base.new(controller.class.view_paths, {}, controller)
-        view.extend master_helper_module
-      end
-      
-      # Returns the root of this presenters views with the template name appended.
-      # e.g. 'presenters/some/specific/path/to/template'
-      #
-      def template_path(name)
-        name = name.to_s
-        if name.include?('/')    # Specific path like 'presenters/somethingorother/foo.haml' given.
-          name
-        else
-          File.join(self.class.presenter_path, name)
-        end
-      end
-      
-      # Extracts a controller from the context.
-      #
-      def extract_controller_from(context)
-        if context.respond_to?(:controller)
-          context.controller
-        else
-          context
-        end
-      end
-      
+    
+    # All rendering is done via method_missing, by calling "render_#{view_name}". This allows subclasses to
+    # override a particular view without creating a template file.
+    #
+    def render(view_name)
+      self.output_buffer ||= ''
+      view_instance.render :partial => view_name, :locals => { :presenter => self }
+    end
+    
+    def view_instance
+      view_paths = self.class.view_paths.dup
+      view_paths.concat controller.view_paths if controller.respond_to? :view_paths
+      @view_instance = PresenterView.new view_paths, controller, master_helper_module
+      # debugger
+      return @view_instance
+    end
   end
 end
